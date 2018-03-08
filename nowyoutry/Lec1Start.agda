@@ -17,6 +17,7 @@ record One : Set where
   -- there are no fields
   -- so that's trivial
   --   (can we have a constructor, for convenience?)
+  constructor <>
 
 data _+_ (S : Set)(T : Set) : Set where -- "where" wants an indented block
   -- to offer a choice of constructors, list them with their types
@@ -24,56 +25,72 @@ data _+_ (S : Set)(T : Set) : Set where -- "where" wants an indented block
   inr : T -> S + T
   -- in Haskell, this was called "Either S T"
 
-record _*_ (S : Set)(T : Set) : Set where
+record Sg (S : Set)(T : S -> Set) : Set where  -- Sg is short for "Sigma"
+  constructor _,_
   field -- introduces a bunch of fields, listed with their types
-    fst : S  
+    fst : S
+    snd : T fst
+-- make _*_ from Sg ?
+
+{-
+record _*_ (S : Set)(T : Set) : Set where
+  constructor _,_
+  field -- introduces a bunch of fields, listed with their types
+    fst : S
     snd : T
   -- in Haskell, this was called "(S, T)"
+-}
+
+_*_ : (S T : Set) -> Set
+S * T = Sg S \ _ -> T
 
 ------------------------------------------------------------------------------
 -- some simple proofs
 ------------------------------------------------------------------------------
 
-{-+}
 comm-* : {A : Set}{B : Set} -> A * B -> B * A
-comm-* x = ?
-{+-}
+-- comm-* record { fst = a ; snd = b } = record { fst = b ; snd = a }
+comm-* (a , b) = b , a
 
-{-+}
 assocLR-+ : {A B C : Set} -> (A + B) + C -> A + (B + C)
-assocLR-+ x = ?
-{+-}
+assocLR-+ (inl (inl a)) = inl a
+assocLR-+ (inl (inr b)) = inr (inl b)
+assocLR-+ (inr c) = inr (inr c)
 
-{-+}
 _$*_ : {A A' B B' : Set} -> (A -> A') -> (B -> B') -> A * B -> A' * B'
-(f $* g) x = r?
-{+-}
+(f $* g) (a , b) = (f a) , (g b)
 
 -- record syntax is rather ugly for small stuff; can we have constructors?
 
-{-+}
 _$+_ : {A A' B B' : Set} -> (A -> A') -> (B -> B') -> A + B -> A' + B'
-(f $+ g) x = ?
-{+-}
+(f $+ g) (inl x) = inl (f x)
+(f $+ g) (inr x) = inr (g x)
 
-{-+}
 combinatorK : {A E : Set} -> A -> E -> A
-combinatorK = ?
+combinatorK = \ a _ -> a
 
 combinatorS : {S T E : Set} -> (E -> S -> T) -> (E -> S) -> E -> T
-combinatorS = ?
-{+-}
+combinatorS = λ est es e → est e (es e)
 
-{-+}
+{-
+K :: A -> E -> A
+  :: A -> (E -> A)
+S K K = (S K) K
+S   :: (E -> S -> T) -> (E -> S) -> E -> T
+S K :: // E = A, S = E, T = A
+       (A -> E) -> A -> A
+S K K :: A = A, E = (E -> A)
+So A doesn't change the goal, and E is not used at all.
+-}
+
 id : {X : Set} -> X -> X
 -- id x = x -- is the easy way; let's do it a funny way to make a point
-id = ?
-{+-}
+id = combinatorS combinatorK (combinatorK {_} {Zero})
+--                                         ^ implicit
+--                                             ^ unused
 
-{-+}
 naughtE : {X : Set} -> Zero -> X
-naughtE x = ?
-{+-}
+naughtE ()
 
 
 ------------------------------------------------------------------------------
@@ -83,24 +100,22 @@ naughtE x = ?
 data Nat : Set where
   zero : Nat
   suc  : Nat -> Nat     -- recursive data type
-  
+
 {-# BUILTIN NATURAL Nat #-}
 --  ^^^^^^^^^^^^^^^^^^^       this pragma lets us use decimal notation
 
-{-+}
 _+N_ : Nat -> Nat -> Nat
-x +N y = ?
+zero +N y = y
+suc x +N y = suc (x +N y)
 
 four : Nat
 four = 2 +N 2
-{+-}
 
 
 ------------------------------------------------------------------------------
 -- and back to logic
 ------------------------------------------------------------------------------
 
-{-+}
 data _==_ {X : Set} : X -> X -> Set where
   refl : (x : X) -> x == x           -- the relation that's "only reflexive"
 
@@ -108,60 +123,68 @@ data _==_ {X : Set} : X -> X -> Set where
 
 _=$=_ : {X Y : Set}{f f' : X -> Y}{x x' : X} ->
         f == f' -> x == x' -> f x == f' x'
-fq =$= xq = ?
-{+-}
+refl f =$= refl x = refl (f x)
 
-{-+}
 zero-+N : (n : Nat) -> (zero +N n) == n
-zero-+N n = ?
+zero-+N n = refl n
 
 +N-zero : (n : Nat) -> (n +N zero) == n
-+N-zero n = ?
++N-zero zero = refl zero
++N-zero (suc n) = refl suc =$= +N-zero n
 
 assocLR-+N : (x y z : Nat) -> ((x +N y) +N z) == (x +N (y +N z))
-assocLR-+N x y z = ?
-{+-}
+assocLR-+N zero y z = refl (y +N z)
+-- assocLR-+N (suc x) y z = refl suc =$= assocLR-+N x y z
+assocLR-+N (suc x) y z rewrite assocLR-+N x y z = refl (suc (x +N (y +N z)))
 
 ------------------------------------------------------------------------------
 -- computing types
 ------------------------------------------------------------------------------
 
-{-+}
 _>=_ : Nat -> Nat -> Set
 x     >= zero   = One
 zero  >= suc y  = Zero
 suc x >= suc y  = x >= y
 
 refl->= : (n : Nat) -> n >= n
-refl->= n = {!!}
+refl->= zero = <>
+refl->= (suc n) = refl->= n
 
 trans->= : (x y z : Nat) -> x >= y -> y >= z -> x >= z
-trans->= x y z x>=y y>=z = {!!}
-{+-}
+trans->= x y zero x>=y y>=z = <>
+trans->= zero zero (suc z) x>=y ()
+trans->= zero (suc y) (suc z) () y>=z
+trans->= (suc x) zero (suc z) x>=y ()
+trans->= (suc x) (suc y) (suc z) x>=y y>=z = trans->= x y z x>=y y>=z
 
 
 ------------------------------------------------------------------------------
 -- construction by proof
 ------------------------------------------------------------------------------
 
-{-+}
+{-
 record Sg (S : Set)(T : S -> Set) : Set where  -- Sg is short for "Sigma"
   constructor _,_
   field -- introduces a bunch of fields, listed with their types
-    fst : S  
+    fst : S
     snd : T fst
 -- make _*_ from Sg ?
+-}
 
 difference : (m n : Nat) -> m >= n -> Sg Nat \ d -> m == (n +N d)
                                    --       (                    )
-difference m       zero    m>=n = m , refl m
-difference zero    (suc n) ()
+difference m zero m>=n = m , refl m
+difference zero (suc n) ()
 difference (suc m) (suc n) m>=n with difference m n m>=n
-difference (suc m) (suc n) m>=n | d , q = d , (refl suc =$= q)
+-- By pattern-matching on q, we learn that m == n +N d:
+difference (suc .(n +N d)) (suc n) m>=n | d , refl .(n +N d) = d , refl (suc (n +N d))
+-- By applying 'suc' to both sides of the proof:
+-- difference (suc m) (suc n) m>=n | d , q = d , (refl suc =$= q)
+-- By rewriting using a known equality:
+-- difference (suc m) (suc n) m>=n | d , q rewrite q = d , (refl (suc (n +N d)))
 
 tryMe      = difference 42 37 _
-don'tTryMe = difference 37 42 {!!}
-{+-}
+-- don'tTryMe = difference 37 42 {!!}
 
 ------------------------------------------------------------------------------
 -- things to remember to say

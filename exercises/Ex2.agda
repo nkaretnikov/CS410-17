@@ -37,11 +37,11 @@ OPE = record
   { Obj          = Nat    -- ...has numbers as objects...
   ; _~>_         = _<=_   -- ...and "thinnings" as arrows.
                           -- Now, assemble the rest of the components.
-  ; id~>         = {!!}
-  ; _>~>_        = {!!}
-  ; law-id~>>~>  = {!!}
-  ; law->~>id~>  = {!!}
-  ; law->~>>~>   = {!!}
+  ; id~>         = oi
+  ; _>~>_        = _o>>_
+  ; law-id~>>~>  = idThen-o>>
+  ; law->~>id~>  = idAfter-o>>
+  ; law->~>>~>   = assoc-o>>
   }
 
 VEC : Nat -> SET => SET                -- Vectors of length n...
@@ -49,8 +49,9 @@ VEC n = record
   { F-Obj       = \ X -> Vec X n       -- ...give a functor from SET to SET...
   ; F-map       = \ f xs -> vMap f xs  -- ...doing vMap to arrows.
                                        -- Now prove the laws.
-  ; F-map-id~>  = extensionality \ xs -> {!!}
-  ; F-map->~>   = \ f g -> extensionality \ xs -> {!!}
+  ; F-map-id~>  = extensionality \ xs -> vMapIdFact refl xs
+  ; F-map->~>   = \ f g -> extensionality \ xs ->
+                    sym (vMapCpFact {f = g} {g = f} (\ x -> refl (g (f x))) xs)
   }
 
 Op : Category -> Category             -- Every category has an opposite...
@@ -58,19 +59,19 @@ Op C = record
   { Obj          = Obj                -- ...with the same objects, but...  
   ; _~>_         = \ S T -> T ~> S    -- ...arrows that go backwards!
                                       -- Now, find the rest!
-  ; id~>         = {!!}
-  ; _>~>_        = {!!}
-  ; law-id~>>~>  = {!!}
-  ; law->~>id~>  = {!!}
-  ; law->~>>~>   = {!!}
+  ; id~>         = id~>
+  ; _>~>_        = \ x y -> y >~> x
+  ; law-id~>>~>  = law->~>id~>
+  ; law->~>id~>  = law-id~>>~>
+  ; law->~>>~>   = \ f g h -> sym (law->~>>~> h g f)
   } where open Category C
 
 CHOOSE : Set -> OPE => Op SET    -- Show that thinnings from n to m...
 CHOOSE X = record                -- ...act by selection...
   { F-Obj       = Vec X          -- ...to cut vectors down from m to n.
-  ; F-map       = {!!}
-  ; F-map-id~>  = extensionality {!!}
-  ; F-map->~>   = \ f g -> extensionality {!!}
+  ; F-map       = _<?=_
+  ; F-map-id~>  = extensionality id-<?=
+  ; F-map->~>   = \ f g -> extensionality (cp-<?= f g)
   }
 
 --??--------------------------------------------------------------------------
@@ -98,19 +99,27 @@ infixr 4 _+L_
 
 
 --??--2.2---------------------------------------------------------------------
++L-id : {X : Set} (xs : List X) -> (xs +L []) == xs
++L-id [] = refl []
++L-id (x ,- xs) rewrite +L-id xs = refl (x ,- xs)
+
++L-assoc : {X : Set} (xs ys zs : List X) ->
+                ((xs +L ys) +L zs) == (xs +L (ys +L zs))
++L-assoc [] ys zs = refl (ys +L zs)
++L-assoc (x ,- xs) ys zs rewrite +L-assoc xs ys zs
+    = refl (x ,- xs +L ys +L zs)
 
 LIST-MONOID : Set -> Category
 LIST-MONOID X =            -- Show that _+L_ is the operation of a monoid,...
   record
   { Obj          = One     -- ... i.e., a category with one object.
-  ; _~>_         = {!!}
-  ; id~>         = {!!}
-  ; _>~>_        = {!!}
-  ; law-id~>>~>  = {!!}
-  ; law->~>id~>  = {!!}
-  ; law->~>>~>   = {!!}
-  } where
-  -- useful helper proofs (lemmas) go here
+  ; _~>_         = \ One One -> List X
+  ; id~>         = []
+  ; _>~>_        = \ xs ys -> xs +L ys
+  ; law-id~>>~>  = \ xs -> refl xs
+  ; law->~>id~>  = +L-id
+  ; law->~>>~>   = +L-assoc
+  }
 
 --??--------------------------------------------------------------------------
 
@@ -121,16 +130,27 @@ LIST-MONOID X =            -- Show that _+L_ is the operation of a monoid,...
 --??--2.3---------------------------------------------------------------------
 
 list : {X Y : Set} -> (X -> Y) -> List X -> List Y
-list f xs = {!!}
+list f [] = []
+list f (x ,- xs) = f x ,- list f xs
+
+list-id : {X : Set} (xs : List X) -> list (\ x -> x) xs == xs
+list-id [] = refl []
+list-id (x ,- xs) rewrite list-id xs = refl (x ,- xs)
+
+list-cp : {R S T : Set} (f : R -> S) (g : S → T) (xs : List R) →
+        list (\ x -> g (f x)) xs == list g (list f xs)
+list-cp f g [] = refl []
+list-cp f g (x ,- xs) rewrite list-cp f g xs
+  = refl (g (f x) ,- list g (list f xs))
 
 LIST : SET => SET
 LIST = record
   { F-Obj       = List
   ; F-map       = list
-  ; F-map-id~>  = extensionality {!!}
-  ; F-map->~>   = \ f g -> extensionality {!!}
-  } where
-  -- useful helper proofs (lemmas) go here
+  ; F-map-id~>  = extensionality list-id 
+  ; F-map->~>   = \ f g -> extensionality \ xs -> list-cp f g xs
+  }
+
 
 --??--------------------------------------------------------------------------
 
@@ -139,14 +159,19 @@ LIST = record
 
 --??--2.4---------------------------------------------------------------------
 
+list-+L-dist : {X Y : Set} (f : X -> Y) (xs ys : List X) ->
+                list f (xs +L ys) == (list f xs +L list f ys)
+list-+L-dist f [] ys = refl (list f ys)
+list-+L-dist f (x ,- xs) ys rewrite list-+L-dist f xs ys
+  = refl (f x ,- list f xs +L list f ys)
+
 LIST+L : {X Y : Set}(f : X -> Y) -> LIST-MONOID X => LIST-MONOID Y
 LIST+L {X}{Y} f = record
   { F-Obj       = id
   ; F-map       = list f -- this yellow will go once LIST-MONOID has arrows!
-  ; F-map-id~>  = {!!}
-  ; F-map->~>   = {!!}
-  } where
-  -- useful helper proofs (lemmas) go here
+  ; F-map-id~>  = refl []
+  ; F-map->~>   = \ xs ys -> list-+L-dist f xs ys
+  }
 
 
 --??--------------------------------------------------------------------------
@@ -159,7 +184,7 @@ LIST+L {X}{Y} f = record
 SINGLE : ID ~~> LIST
 SINGLE = record
   { xf          = \ x -> x ,- []      -- turn a value into a singleton list
-  ; naturality  = \ f -> {!!}
+  ; naturality  = \ f -> refl (\ x -> f x ,- [])
   }
 
 --??--------------------------------------------------------------------------
@@ -177,14 +202,21 @@ SINGLE = record
 --??--2.6---------------------------------------------------------------------
 
 concat : {X : Set} -> List (List X) -> List X
-concat xss = {!!}
+concat [] = []
+concat (xs ,- xss) = xs +L (concat xss)
 
 CONCAT : (LIST >=> LIST) ~~> LIST
 CONCAT = record
   { xf          = concat
-  ; naturality  = {!!}
+  ; naturality  = \ f -> extensionality \ xss -> concat-list f xss
   } where
   -- useful helper proofs (lemmas) go here
+  concat-list : {X Y : Set} (f : X -> Y) (xss : List (List X)) ->
+                  concat (list (list f) xss) == list f (concat xss)
+  concat-list f [] = refl []
+  concat-list f (xs ,- xss)
+    rewrite concat-list f xss | list-+L-dist f xs (concat xss)
+    = refl (list f xs +L list f (concat xss))
 
 --??--------------------------------------------------------------------------
 
@@ -193,6 +225,27 @@ CONCAT = record
 -- single and concat play nicely with each other.
 
 --??--2.7---------------------------------------------------------------------
+concat-list-single : {X : Set} (xs : List X) ->
+                       concat (list (\ x -> x ,- []) xs) == xs
+concat-list-single [] = refl []
+concat-list-single (x ,- xs) rewrite concat-list-single xs = refl (x ,- xs)
+
+-- Thanks to tomjack on Freenode for spotting how to do it without 'mutual'.
+concat-+L :
+    {X : Set} (xss : List (List X)) (yss : List (List X)) ->
+    concat (xss +L yss) ==
+    (concat xss +L concat yss)
+concat-+L [] yss = refl (concat yss)
+concat-+L (xs ,- xss) yss
+  rewrite concat-+L xss yss | +L-assoc xs (concat xss) (concat yss)
+  = refl (xs +L concat xss +L concat yss)
+
+concat-concat-list-concat : {X : Set} (xsss : List (List (List X))) ->
+                    concat (concat xsss) == concat (list concat xsss)
+concat-concat-list-concat [] = refl []
+concat-concat-list-concat (xss ,- xsss)
+  rewrite concat-+L xss (concat xsss) | concat-concat-list-concat xsss
+  = refl (concat xss +L concat (list concat xsss))
 
 module LIST-MONAD where
   open MONAD LIST public
@@ -200,11 +253,10 @@ module LIST-MONAD where
   ListMonad = record
     { unit      = SINGLE
     ; mult      = CONCAT
-    ; unitMult  = {!!}
-    ; multUnit  = {!!}
-    ; multMult  = {!!}
-    } where
-    -- useful helper proofs (lemmas) go here
+    ; unitMult  = extensionality \ xs -> +L-id xs
+    ; multUnit  = extensionality \ xs -> concat-list-single xs
+    ; multMult  = extensionality \ xsss -> concat-concat-list-concat xsss
+    }
 
 -- open LIST-MONAD
 

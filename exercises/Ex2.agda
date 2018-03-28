@@ -348,16 +348,31 @@ VecCopy X n = All (\ _ -> X) (copy n)
 
 all : {X : Set}{S T : X -> Set} ->
       [ S -:> T ] -> [ All S -:> All T ]
-all f xs ss = {!!}
+all f [] <> = <>
+all f (x ,- xs) (fst , snd) = f x fst , all f xs snd
+
+all-id : {X : Set} {T : X -> Set} (xs : List X) (A : All T xs) ->
+    all (\ i x -> x) xs A == A
+all-id [] <> = refl <>
+all-id (x ,- xs) (fst , snd) rewrite all-id xs snd = refl (fst , snd)
+
+all-map : {X : Set} {R S T : X -> Set}
+            (f : (i : X) -> R i -> S i)
+            (g : (i : X) -> S i -> T i) (xs : List X) (A : All R xs) ->
+        all (\ i x → g i (f i x)) xs A == all g xs (all f xs A)
+all-map f g [] <> = refl <>
+all-map f g (x ,- xs) (fst , snd) rewrite all-map f g xs snd
+  = refl (g x (f x fst) , all g xs (all f xs snd))
 
 ALL : (X : Set) -> (X ->SET) => (List X ->SET)
 ALL X = record
   { F-Obj      = All
   ; F-map      = all
-  ; F-map-id~> = {!!}
-  ; F-map->~>  = {!!}
-  } where
-  -- useful helper facts go here
+  ; F-map-id~> = extensionality \ xs -> extensionality \ A -> all-id xs A
+  ; F-map->~>  = \ f g -> extensionality \ xs -> extensionality \ A ->
+                   all-map f g xs A
+  }
+
 
 --??--------------------------------------------------------------------------
 
@@ -445,15 +460,20 @@ footprints = (4 , 6 , refl 10) 8>< strVec "foot"
 CUTTING : {I O : Set}(C : I |> O) -> (I ->SET) => (O ->SET)
 CUTTING {I}{O} C = record
   { F-Obj = Cutting C
-  ; F-map = {!!}
+  ; F-map = \ { f o (cut 8>< pieces) -> cut 8>< all f (inners {o} cut) pieces }
   ; F-map-id~> = extensionality \ o -> extensionality \ { (c 8>< ps) ->
-     {!!} }
+     -- The left parts are the same, and there's a lemma that shows
+     -- that the right parts are equal.  This is similar to 'cong' from the
+     -- stdlib, but requires constructing a trivial proof for the
+     -- first argument.
+     refl (c 8><_ ) =$= all-id (inners c) ps }
   ; F-map->~> = \ f g ->
      extensionality \ o -> extensionality \ { (c 8>< ps) ->
-     {!!} } 
+     refl (c 8><_ ) =$= all-map f g (inners c) ps }
   } where
   open _|>_ C
   open _=>_ (ALL I)
+
 
 --??--------------------------------------------------------------------------
 
@@ -551,10 +571,17 @@ module INTERIOR {I : Set}{C : I |> I} where  -- fix some C...
 
     allInteriorFoldLaw : (pq : [ P -:> Q ])(qalg : Algebra (CUTTING C) Q) ->
       allInteriorFold pq qalg == all (interiorFold pq qalg)
-    allInteriorFoldLaw pq qalg = extensionality \ is -> extensionality \ ps ->
-      {!!}
+    allInteriorFoldLaw pq qalg
+      = extensionality \ is -> extensionality \ ps -> help pq qalg is ps
       where
       -- helper lemmas go here
+      help : (pq : [ P -:> Q ])(qalg : Algebra (CUTTING C) Q) ->
+             (is : List I) (ps : All (Interior C P) is) ->
+             allInteriorFold pq qalg is ps == all (interiorFold pq qalg) is ps
+      help pq qalg [] <> = refl <>
+      help pq qalg (x ,- is) (fst , snd) rewrite help pq qalg is snd
+        = refl (interiorFold pq qalg x fst , all (interiorFold pq qalg) is snd)
+
 
 --??--------------------------------------------------------------------------
 
@@ -564,6 +591,8 @@ module INTERIOR {I : Set}{C : I |> I} where  -- fix some C...
 
 --??--2.11--------------------------------------------------------------------
 
+    -- pq -- turn n Ps into n Qs for all n.
+    -- qalg -- turn a bunch of Qs into a Q
     interiorFoldLemma :
       (pq : [ P -:> Q ])(qalg : Algebra (CUTTING C) Q)
       (f : [ Interior C P -:> Q ]) ->
@@ -572,7 +601,24 @@ module INTERIOR {I : Set}{C : I |> I} where  -- fix some C...
         qalg i (c 8>< all f (inners c) ps) == f i < c 8>< ps >) ->
       (i : I)(pi : Interior C P i) -> interiorFold pq qalg i pi == f i pi
 
-    interiorFoldLemma pq qalg f base step i pi = {!!}
+    interiorFoldLemma pq qalg f base step i (tile x) = base i x
+    interiorFoldLemma pq qalg f base step i < cut 8>< pieces >
+       rewrite allInteriorFoldLaw pq qalg
+          | sym (step i cut pieces)
+       with _|>_.inners cut
+       --               ^^^
+{-
+-- XXX: Error:
+(Cuts i) !=<
+(_I_541 qalg f i cut pieces step pq base |>
+ _O_542 qalg f i cut pieces step pq base)
+of type Set
+when checking that the expression cut has type
+_I_541 qalg f i cut pieces step pq base |>
+_O_542 qalg f i cut pieces step pq base
+-}
+    ... | z = refl (\ x -> qalg i (cut 8>< x)) =$= {!!}
+
 
 --??--------------------------------------------------------------------------
 

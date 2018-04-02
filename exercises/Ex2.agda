@@ -591,8 +591,6 @@ module INTERIOR {I : Set}{C : I |> I} where  -- fix some C...
 
 --??--2.11--------------------------------------------------------------------
 
-    -- pq -- turn n Ps into n Qs for all n.
-    -- qalg -- turn a bunch of Qs into a Q
     interiorFoldLemma :
       (pq : [ P -:> Q ])(qalg : Algebra (CUTTING C) Q)
       (f : [ Interior C P -:> Q ]) ->
@@ -603,23 +601,138 @@ module INTERIOR {I : Set}{C : I |> I} where  -- fix some C...
 
     interiorFoldLemma pq qalg f base step i (tile x) = base i x
     interiorFoldLemma pq qalg f base step i < cut 8>< pieces >
-       rewrite allInteriorFoldLaw pq qalg
-          | sym (step i cut pieces)
-       with _|>_.inners cut
-       --               ^^^
+
 {-
--- XXX: Error:
-(Cuts i) !=<
-(_I_541 qalg f i cut pieces step pq base |>
- _O_542 qalg f i cut pieces step pq base)
-of type Set
-when checking that the expression cut has type
-_I_541 qalg f i cut pieces step pq base |>
-_O_542 qalg f i cut pieces step pq base
+This part of the exercise was a struggle, but it forced me to
+learn how to do equational reasoning proofs and that 'with' not always works:
+http://agda.readthedocs.io/en/v2.5.2/language/with-abstraction.html#ill-typed-with-abstractions
+
+Thanks to the folks on Freenode for help!
+
+First, knowing how operators associate is important, so it doesn't
+look magical.
+
+The first step is to use the left hand side of the goal
+as the first argument of the transitivity operator.
+
+After that, apply QED to the right hand side of the goal (to construct
+a trivial proof because that's what transitivity expects), and use it
+as the last transitivity argument.
+
+Then refine the goal in the middle by using the same transitivity
+operator.  Just think about what you have and what you need to
+construct, so that the transitivity "chaining" works.
+
+Here's an example (with the operators from the stdlib):
+
+test : ∀ n → n * 0 ≡ 0
+test zero = refl
+test (suc n)
+  = (n * 0 ≡⟨ test n ⟩ (0 ∎))
 -}
-    ... | z = refl (\ x -> qalg i (cut 8>< x)) =$= {!!}
 
+{-
+Nested (with a redundant step):
+-- x ->
+-- x == y ->
+-- y == z ->
+-- x == z
+  = (n * 0 ≡⟨ refl ⟩
+      (n * 0 ≡⟨ test n ⟩ (0 ∎)))
 
+-- n * 0 ->         -- x:      n * 0
+-- n * 0 == 0 ->    -- x == y: n * 0 == 0, so y: 0
+-- 0 == 0           -- y == z: 0 == 0, so z: 0
+                    -- res: n * 0 == 0
+-}
+
+{-
+Now, for this particular case:
+
+Goal: qalg i (cut 8>< allInteriorFold pq qalg (inners cut) pieces)
+      == f i < cut 8>< pieces >
+y == x: Goal
+so y: qalg i (cut 8>< allInteriorFold pq qalg (inners cut) pieces)
+y == z: qalg i (cut 8>< allInteriorFold pq qalg (inners cut) pieces)
+          == ???
+z: ???
+
+(Update: I used the diagrammatic version of transitivity at first, but
+changed to the ordinary one due to how 'step' is defined.)
+
+'step' looks good for this one, so:
+
+qalg i (cut 8>< allInteriorFold pq qalg (inners cut) pieces)
+  =< qalg i (cut 8>< allInteriorFold pq qalg (inners cut) pieces)
+      == f i < cut 8>< pieces > ]=
+  step i cut pieces
+
+Put it into the existing hole with the new hole in the middle, like
+so:
+
+qalg i (cut 8>< allInteriorFold pq qalg (inners cut) pieces)
+  =< ? ]= step i cut pieces
+
+And hit refine.
+
+The new goal is:
+
+qalg i (cut 8>< all f (inners cut) pieces)
+  == qalg i (cut 8>< allInteriorFold pq qalg (inners cut) pieces)
+
+Then you're supposed to notice similarities in this equality
+and come up with the lemma below (the tricky bit!).
+
+But to use the lemma, we must transform it to have 'qalg i (cut 8><
+...' on the outside.
+
+Recall this definition:
+
+_=$=_ : {X Y : Set}{f f' : X -> Y}{x x' : X} ->
+        f == f' -> x == x' -> f x == f' x'
+
+Here f and f' are:
+
+\ x -> qalg i (cut 8>< x)
+
+And the proof is trivial (both sides are the same):
+
+refl (\ x -> qalg i (cut 8>< x))
+
+And the other equality is the lemma (as we intended), so:
+
+refl (\ x -> qalg i (cut 8>< x))
+  =$= lemma (inners cut) pieces
+
+But if we check it against the goal, we get:
+
+Goal: qalg i (cut 8>< all f (inners cut) pieces) ==
+      qalg i (cut 8>< allInteriorFold pq qalg (inners cut) pieces)
+Have: qalg i (cut 8>< allInteriorFold pq qalg (inners cut) pieces)
+      == qalg i (cut 8>< all f (inners cut) pieces)
+
+Almost right, but needs 'sym' to swap the sides.
+-}
+
+      -- This is pretty much the proof by tomjack on Freenode.
+      -- At first, I couldn't do it myself at all.
+      = qalg i (cut 8>< allInteriorFold pq qalg (inners cut) pieces)
+        =[  qalg i (cut 8>< allInteriorFold pq qalg (inners cut) pieces)
+        =<  sym (refl (\ x -> qalg i (cut 8>< x)) =$= lemma (inners cut) pieces)
+        ]= step i cut pieces
+        >= f i < cut 8>< pieces >
+        [QED]
+      where
+        lemma : (is : List I) (pis : All (Interior C P) is) ->
+              allInteriorFold pq qalg is pis == all f is pis
+        lemma [] pis = refl <>
+        lemma (x ,- is) (fst , snd)
+          -- Note how Agda _doesn't_ complain about the use of
+          -- interiorFoldLemma here.
+          rewrite interiorFoldLemma pq qalg f base step x fst
+            | lemma is snd = refl (f x fst , all f is snd)
+
+{-
 --??--------------------------------------------------------------------------
 
     -- We'll use it in this form:
@@ -863,3 +976,4 @@ picture = interiorFold (\ _ -> id) NatCut2DMatAlg
 
 test2 = picture _ rectangle
 
+-}
